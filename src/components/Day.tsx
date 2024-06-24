@@ -1,5 +1,6 @@
 import { FC } from 'react'
-import { Box, Card } from '@mui/material'
+import { Card } from '@mui/material'
+import { dayBoxStyle } from './Styles'
 
 interface IDayProps {
   emoji: string
@@ -9,19 +10,8 @@ interface IDayProps {
 
 export const Day: FC<IDayProps> = ({ emoji, temp, curDay }) => {
   return (
-    <Card
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        backgroundColor: 'white',
-        flexWrap: 'wrap',
-        width: '120px',
-        gap: '10px',
-        paddingBottom: '10px',
-      }}
-    >
-      <span>{emoji}</span>
+    <Card sx={dayBoxStyle}>
+      <span className="emoji">{emoji}</span>
       <span>{curDay}</span>
       <span>{temp}</span>
     </Card>

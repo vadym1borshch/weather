@@ -1,12 +1,18 @@
-import { FC, useEffect, useState } from 'react'
-import { Box, Card, TextField } from '@mui/material'
-import { cityWeatherResType, DailyType, locationResType } from '../common/types'
+import { FC, useCallback, useEffect, useState } from 'react'
+import { Box, Button, TextField } from '@mui/material'
 import Flag from 'react-world-flags'
 import axios from 'axios'
-import { weatherContainerStyle } from './Styles'
+import _ from 'lodash'
+
+import { cityWeatherResType, DailyType, locationResType } from '../common/types'
+import {
+  cityNameBoxStyle,
+  dayWeatherBoxStyle,
+  errorBoxStyle,
+  weatherContainerStyle
+} from './Styles'
 import { Day } from './Day'
-import { format, isToday, parseISO } from 'date-fns'
-import { enGB, uk } from 'date-fns/locale'
+import { formatDate, getWeatherIcon } from '../common/functions'
 
 interface IWeatherProps {}
 
@@ -17,25 +23,32 @@ export const Weather: FC<IWeatherProps> = () => {
   )
   const [city, setCity] = useState('')
   const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
 
-  const formatDate = (date: string, countryCode: string = 'UA') => {
-    const code = countryCode === 'UA' ? uk : enGB
-    const targetDate = parseISO(date)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const debounceAction = useCallback(
+    _.debounce((value: string) => {
+      if (!value || value.length < 2) return
+      setCity('')
+      setIsLoading(true)
+      const getLocation = async () => {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${value}`
+        try {
+          setLocationInfo(null)
+          const res: locationResType = await axios.get(url)
+          setLocationInfo(res)
+        } catch (error: any) {
+          setError(error.message)
+        } finally {
+          setIsLoading(false)
+        }
+      }
+      getLocation()
+    }, 3000),
+    [],
+  )
 
-    if (isToday(targetDate)) {
-      return countryCode === 'UA' ? 'сьогодні' : 'today'
-    } else {
-      return format(targetDate, 'eeee', { locale: code })
-    }
-  }
-
-  function getWeatherIcons(dailyData: DailyType) {
-    const weatherIcons = {
-      0: '🌞', // Ясно
-      1: '☁️', // Хмарно
-      2: '🌧️', // Дощ
-      3: '❄️', // Сніг
-    }
+  const actualWeather = (dailyData: DailyType) => {
     const day = dailyData.time
     const tMin = dailyData.temperature_2m_min
     const tMax = dailyData.temperature_2m_max
@@ -43,28 +56,21 @@ export const Weather: FC<IWeatherProps> = () => {
 
     return day.map((d, i) => {
       return {
-        emoji: '',
-        curDay: formatDate(d),
+        emoji: getWeatherIcon(tMax[i], weatherCode[i]),
+        curDay: formatDate(d, 'en'),
         temp: `${Math.floor(tMin[i])}° - ${Math.floor(tMax[i])}°`,
       }
     })
   }
 
   useEffect(() => {
-    const getLocation = async () => {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=kharkiv`
-      try {
-        const res: locationResType = await axios.get(url)
-        setLocationInfo(res)
-      } catch (error: any) {
-        setError(error.message)
-      }
-    }
-    getLocation()
-  }, [])
+    debounceAction(city)
+    return () => {}
+  }, [city, debounceAction])
 
   useEffect(() => {
     if (locationInfo) {
+      setIsLoading(true)
       const { latitude, longitude, timezone } = locationInfo.data.results[0]
       const getWeather = async () => {
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&timezone=${timezone}&daily=weathercode,temperature_2m_max,temperature_2m_min,`
@@ -73,6 +79,8 @@ export const Weather: FC<IWeatherProps> = () => {
           setDailyWeather(res)
         } catch (error: any) {
           setError(error.message)
+        } finally {
+          setIsLoading(false)
         }
       }
       getWeather()
@@ -80,40 +88,47 @@ export const Weather: FC<IWeatherProps> = () => {
   }, [locationInfo])
 
   if (error) {
-    return <h1>{error}</h1>
+    return (
+      <Box sx={errorBoxStyle}>
+        <h1>{error}</h1>
+        <Button onClick={() => window.location.reload()}>Restart</Button>
+      </Box>
+    )
   }
 
   return (
-    <Card sx={weatherContainerStyle}>
-      Weather
+    <Box sx={weatherContainerStyle}>
+      <h1>Actual Weather</h1>
       <TextField
+        color="success"
         label="Enter City"
         value={city}
         onChange={(e) => setCity(e.currentTarget.value)}
       />
-      <Flag
-        code={locationInfo?.data.results[0].country_code}
-        style={{ width: '50px', height: '50px' }}
-      />
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'stretch',
-          gap: 2,
-          flexWrap: 'wrap',
-        }}
-      >
-        {dailyWeather &&
-          getWeatherIcons(dailyWeather.data.daily).map((wether) => {
+      {!isLoading && locationInfo && (
+        <Box sx={cityNameBoxStyle}>
+          <h3>{locationInfo?.data.results[0].name}</h3>
+          <Flag
+            code={locationInfo?.data.results[0].country_code}
+            style={{ width: '50px', height: '50px' }}
+          />
+        </Box>
+      )}
+      <Box sx={dayWeatherBoxStyle}>
+        {isLoading && <>Loading ...</>}
+        {!isLoading &&
+          dailyWeather &&
+          actualWeather(dailyWeather.data.daily).map((weather, i) => {
             return (
               <Day
-                emoji={wether.emoji}
-                curDay={wether.curDay}
-                temp={wether.temp}
+                key={i + weather.temp}
+                emoji={weather.emoji}
+                curDay={weather.curDay}
+                temp={weather.temp}
               />
             )
           })}
       </Box>
-    </Card>
+    </Box>
   )
 }
